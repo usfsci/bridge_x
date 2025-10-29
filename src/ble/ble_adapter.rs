@@ -23,7 +23,7 @@ use bytes::Bytes;
 
 use super::gatt::{SERVICE_UUID, CHARACTERISTIC_UUID, MANUFACTURER_ID};
 
-pub async fn configure(mut subs: broadcast::Receiver<Bytes>, _broadcaster: broadcast::Sender<Bytes>) -> bluer::Result<()> {
+pub async fn configure(mut subs: broadcast::Receiver<Bytes>, transmitter: broadcast::Sender<Bytes>) -> bluer::Result<()> {
     println!("will config");
 
     env_logger::init();
@@ -116,6 +116,7 @@ pub async fn configure(mut subs: broadcast::Receiver<Bytes>, _broadcaster: broad
                 }
             }
 
+            // Recive messages from the Server via subscription
             msg = subs.recv() => {
                 match msg {
                     Ok(m) => {
@@ -160,6 +161,9 @@ pub async fn configure(mut subs: broadcast::Receiver<Bytes>, _broadcaster: broad
                     Ok(n) => {
                         value = read_buf[0..n].to_vec();
                         println!("Write request with {} bytes: {:x?}", n, &value);
+                        if let Err(e) = transmitter.send(Bytes::from(value)) {
+                            eprintln!("ble could not transmit: {}", e);
+                        }
                     }
                     Err(err) => {
                         println!("Write stream error: {}", &err);

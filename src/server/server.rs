@@ -1,8 +1,10 @@
-use futures::SinkExt;
-//use futures::StreamExt;
+use futures::{
+    SinkExt,
+    StreamExt
+};
 use tokio::net::{UnixListener, UnixStream};
 use tokio_util::codec::{Framed};
-use tokio_stream::StreamExt; 
+//use tokio_stream; 
 use tokio::sync::{
     broadcast
 };
@@ -33,13 +35,77 @@ pub async fn run(provider: broadcast::Sender::<Bytes>, broadcaster: broadcast::S
     }
 }
 
-/*async fn handle_connection(stream: UnixStream, tx: Sender<Bytes>) {
+async fn handle_connection(stream: UnixStream, mut subs: broadcast::Receiver<Bytes>, transmitter: broadcast::Sender<Bytes>) {
+    // Use FramedRead (read-only) with our codec
+    //let reader = FramedRead::new(stream, TwoByteLenSkipReserved::new(MAX_FRAME_SIZE));
+    // use a single Framed (Stream + Sink) to read frames and write responses
+    //let mut reader_writer = Framed::new(stream, TwoByteLenSkipReserved::new(MAX_FRAME_SIZE));
     let codec = TwoByteLenSkipReserved::new(MAX_FRAME_SIZE);
     let framed = Framed::new(stream, codec);
-    let (mut sink, mut stream) = framed.split();
+
+    // split into sink (writer) and stream (reader)
+    let (mut sink, mut source) = framed.split();
+
+    loop {
+        tokio::select! {
+            Some(frame_res) = source.next() => {
+                match frame_res {
+                    Ok(bytes_payload) => {
+                        let _r = match decode_message(bytes_payload) {
+                            Ok(m) => {
+                                match m {
+                                    Message::Request(req) => {
+                                        println!("req=\n{}", req);
+                                        if let Err(e) = transmitter.send(Bytes::from("sent a request to channel")) {
+                                            println!("transmitter err: {}", e);
+                                        }
+
+                                        let response = Response::new(
+                                            req.protocol,
+                                            req.version,
+                                            req.id,
+                                            200,
+                                            "OK".to_string(),
+                                            None
+                                        );
+
+                                        let s = response.encode();
+                                        println!("will respond: {}", s);
+
+                                        let payload = Bytes::from(s);
+                                        if let Err(e) = sink.send(payload).await {
+                                            eprintln!("could not send response: {}", e);
+                                            return;
+                                        }
+                                    }
+
+                                    Message::Response(resp) => println!("resp=\n{}", resp)
+                                }
+
+                            },
+                            Err(e) => {
+                                eprintln!("could not decode message {}", e);
+                            }
+                        };
+                    }
+                    Err(e) => {
+                        eprintln!("frame read error: {}", e);
+                        //break; // or continue depending on desired policy
+                    }
+                }
+            }
+
+            ble_msg = subs.recv() => {
+                match ble_msg {
+                    Ok(m) => println!("recv ble msg: {:?}", m),
+                    Err(e) => eprintln!("subs recv err: {}", e)
+                }
+            }
+        }
+    }
 
 
-    while let Some(frame_res) = reader_writer.next().await {
+    /*while let Some(frame_res) = source.next().await {
         match frame_res {
             Ok(bytes_payload) => {
                 let _r = match decode_message(bytes_payload) {
@@ -47,9 +113,10 @@ pub async fn run(provider: broadcast::Sender::<Bytes>, broadcaster: broadcast::S
                         match m {
                             Message::Request(req) => {
                                 println!("req=\n{}", req);
-                                if let Err(_closed) = tx.send(Bytes::from("sent a request to channel")).await {
-                                    eprintln!("ble receiver closed");
+                                if let Err(e) = transmitter.send(Bytes::from("sent a request to channel")) {
+                                    println!("transmitter err: {}", e);
                                 }
+
                                 let response = Response::new(
                                     req.protocol,
                                     req.version,
@@ -63,11 +130,12 @@ pub async fn run(provider: broadcast::Sender::<Bytes>, broadcaster: broadcast::S
                                 println!("will respond: {}", s);
 
                                 let payload = Bytes::from(s);
-                                if let Err(e) = reader_writer.send(payload).await {
+                                if let Err(e) = sink.send(payload).await {
                                     eprintln!("could not send response: {}", e);
                                     return;
                                 }
                             }
+
                             Message::Response(resp) => println!("resp=\n{}", resp)
                         }
 
@@ -82,12 +150,12 @@ pub async fn run(provider: broadcast::Sender::<Bytes>, broadcaster: broadcast::S
                 break; // or continue depending on desired policy
             }
         }
-    }
+    }*/
 
     println!("connection closed");
-}*/
+}
 
-async fn handle_connection(stream: UnixStream, subs: broadcast::Receiver<Bytes>, transmitter: broadcast::Sender<Bytes>) {
+/*async fn handle_connection(stream: UnixStream, subs: broadcast::Receiver<Bytes>, transmitter: broadcast::Sender<Bytes>) {
     // Use FramedRead (read-only) with our codec
     //let reader = FramedRead::new(stream, TwoByteLenSkipReserved::new(MAX_FRAME_SIZE));
     // use a single Framed (Stream + Sink) to read frames and write responses
@@ -141,4 +209,4 @@ async fn handle_connection(stream: UnixStream, subs: broadcast::Receiver<Bytes>,
     }
 
     println!("connection closed");
-}
+}*/
