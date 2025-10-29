@@ -4,31 +4,32 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio_util::codec::{Framed};
 use tokio_stream::StreamExt; 
 use tokio::sync::{
-    mpsc::{Sender, Receiver},
     broadcast
 };
-//use tokio::task;
 use bytes::Bytes;
-use std::collections::{HashMap, HashSet};
 use std::fs;
-
 use crate::server::mcodec::{TwoByteLenSkipReserved, MAX_FRAME_SIZE};
-use crate::server::peer::{Peer, PeerPair};
+//use crate::server::peer::{Peer, PeerPair};
 use crate::proto::msg::{Message, Response, decode_message};
 
 
 const SOCKET_FILE: &str = "/tmp/gateway.sock";
 
 
-pub async fn run(rx: PeerPair<Bytes>, tx: PeerPair<Bytes>) -> std::io::Result<()> {
+pub async fn run(provider: broadcast::Sender::<Bytes>, broadcaster: broadcast::Sender::<Bytes>) -> std::io::Result<()> {
     let _ = fs::remove_file(SOCKET_FILE);
 
     let listener = UnixListener::bind(SOCKET_FILE)?;
 
     loop {
         let (stream, _) = listener.accept().await?;
-        // spawn a task that handles this connection
-        tokio::spawn(handle_connection(stream, rx, tx.clone()));
+
+        let transmitter = broadcaster.clone();
+        let subs = provider.subscribe();
+        
+        tokio::spawn(async move {
+            handle_connection(stream, subs, transmitter).await;
+        });
     }
 }
 
@@ -86,13 +87,12 @@ pub async fn run(rx: PeerPair<Bytes>, tx: PeerPair<Bytes>) -> std::io::Result<()
     println!("connection closed");
 }*/
 
-async fn handle_connection(stream: UnixStream, rx: PeerPair<Bytes>, tx: PeerPair<Bytes>) {
+async fn handle_connection(stream: UnixStream, subs: broadcast::Receiver<Bytes>, transmitter: broadcast::Sender<Bytes>) {
     // Use FramedRead (read-only) with our codec
     //let reader = FramedRead::new(stream, TwoByteLenSkipReserved::new(MAX_FRAME_SIZE));
     // use a single Framed (Stream + Sink) to read frames and write responses
     let mut reader_writer = Framed::new(stream, TwoByteLenSkipReserved::new(MAX_FRAME_SIZE));
-    let subs = rx.b.subscribe();
-
+    
     while let Some(frame_res) = reader_writer.next().await {
         match frame_res {
             Ok(bytes_payload) => {
@@ -101,8 +101,8 @@ async fn handle_connection(stream: UnixStream, rx: PeerPair<Bytes>, tx: PeerPair
                         match m {
                             Message::Request(req) => {
                                 println!("req=\n{}", req);
-                                if let Err(_closed) = tx.send(Bytes::from("sent a request to channel")).await {
-                                    eprintln!("ble receiver closed");
+                                if let Err(e) = transmitter.send(Bytes::from("sent a request to channel")) {
+                                    println!("transmitter err: {}", e);
                                 }
 
                                 let response = Response::new(
@@ -122,8 +122,6 @@ async fn handle_connection(stream: UnixStream, rx: PeerPair<Bytes>, tx: PeerPair
                                     eprintln!("could not send response: {}", e);
                                     return;
                                 }
-
-                                tx.a.send(payload);
                             }
 
                             Message::Response(resp) => println!("resp=\n{}", resp)

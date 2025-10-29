@@ -15,17 +15,20 @@ use futures::{future, pin_mut, StreamExt};
 use std::{collections::BTreeMap, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    sync::{mpsc, broadcast},
+    sync::broadcast,
     time::{interval, sleep},
 };
 use bytes::Bytes;
 
+
 use super::gatt::{SERVICE_UUID, CHARACTERISTIC_UUID, MANUFACTURER_ID};
 
-pub async fn configure(mut rx_from_server: mpsc::Receiver<Bytes>, tx: broadcast::Sender<Bytes>) -> bluer::Result<()> {
+pub async fn configure(mut subs: broadcast::Receiver<Bytes>, _broadcaster: broadcast::Sender<Bytes>) -> bluer::Result<()> {
     println!("will config");
 
     env_logger::init();
+
+    //let mut rx_b = rx.b.subscribe();
 
     // Get session
     let session = bluer::Session::new().await?;
@@ -113,13 +116,25 @@ pub async fn configure(mut rx_from_server: mpsc::Receiver<Bytes>, tx: broadcast:
                 }
             }
 
-            Some(msg) = rx_from_server.recv() => {
-                println!("***recv from server\n{:?}", msg);
+            msg = subs.recv() => {
+                match msg {
+                    Ok(m) => {
+                        println!("***recv from server: {:?}", m);
+                        if let Some(writer) = writer_opt.as_mut() {
+                            //println!("Notifying with value {:x?}", &value);
+                            if let Err(err) = writer.write(&m).await {
+                                println!("notification stream error: {}", &err);
+                                writer_opt = None;
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("channel recv err: {}", e)
+                }
             }
 
             _ = interval.tick() => {
                 //println!("Decrementing each element by one");
-                for v in &mut *value {
+                /*for v in &mut *value {
                     *v = v.saturating_sub(1);
                 }
                 //println!("Value is {:x?}", &value);
@@ -129,7 +144,7 @@ pub async fn configure(mut rx_from_server: mpsc::Receiver<Bytes>, tx: broadcast:
                         println!("Notification stream error: {}", &err);
                         writer_opt = None;
                     }
-                }
+                }*/
             }
             read_res = async {
                 match &mut reader_opt {
