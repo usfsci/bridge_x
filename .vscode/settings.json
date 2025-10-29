@@ -1,0 +1,15 @@
+{
+    "rust-analyzer.completion.fullFunctionSignatures.enable": true,
+    "editor.hover.enabled": true,
+    "editor.parameterHints.enabled": true,
+    "editor.suggest.showFields": true,
+    /*"rust-analyzer.procMacro.enable": false,
+    "rust-analyzer.lens.enable": false,
+    "rust-analyzer.diagnostics.enable": true,
+    //"rust-analyzer.checkOnSave": false,
+    //"rust-analyzer.cargo.features": [],*/
+    "files.watcherExclude": {
+        "**/target": true,
+        "**/node_modules": true
+    }
+}
