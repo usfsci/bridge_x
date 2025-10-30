@@ -18,10 +18,13 @@ use tokio::{
     sync::broadcast,
     time::{interval, sleep},
 };
-use bytes::Bytes;
-
+use bytes::{Bytes, Buf};
 
 use super::gatt::{SERVICE_UUID, CHARACTERISTIC_UUID, MANUFACTURER_ID};
+
+const DEFAULT_MTU: usize = 23;
+const ATT_HEADER_SIZE: usize = 3;
+
 
 pub async fn configure(mut subs: broadcast::Receiver<Bytes>, transmitter: broadcast::Sender<Bytes>) -> bluer::Result<()> {
     println!("will config");
@@ -91,11 +94,15 @@ pub async fn configure(mut subs: broadcast::Receiver<Bytes>, transmitter: broadc
     let stdin = BufReader::new(tokio::io::stdin());
     let mut lines = stdin.lines();
 
-    let mut value: Vec<u8> = vec![0x10, 0x01, 0x01, 0x10];
+    let mut value: Vec<u8>;// = vec![0x10, 0x01, 0x01, 0x10];
     let mut read_buf = Vec::new();
     let mut reader_opt: Option<CharacteristicReader> = None;
     let mut writer_opt: Option<CharacteristicWriter> = None;
-    let mut interval = interval(Duration::from_secs(1));
+    let mtu: usize;
+    //writer_opt.unwrap().mtu()
+    //let mut interval = interval(Duration::from_secs(1));
+
+
     pin_mut!(char_control);
 
     loop {
@@ -117,15 +124,21 @@ pub async fn configure(mut subs: broadcast::Receiver<Bytes>, transmitter: broadc
             }
 
             // Recive messages from the Server via subscription
+            // and send as notification to central.
             msg = subs.recv() => {
                 match msg {
                     Ok(m) => {
                         println!("***recv from server: {:?}", m);
                         if let Some(writer) = writer_opt.as_mut() {
                             //println!("Notifying with value {:x?}", &value);
-                            if let Err(err) = writer.write(&m).await {
-                                println!("notification stream error: {}", &err);
-                                writer_opt = None;
+                            let chunk_size = writer.mtu() - ATT_HEADER_SIZE;
+
+                            for chunk in m.chunks(chunk_size) {
+                                if let Err(err) = writer.write(&chunk).await {
+                                    println!("notification stream error: {}", &err);
+                                    writer_opt = None;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -133,7 +146,7 @@ pub async fn configure(mut subs: broadcast::Receiver<Bytes>, transmitter: broadc
                 }
             }
 
-            _ = interval.tick() => {
+            //_ = interval.tick() => {
                 //println!("Decrementing each element by one");
                 /*for v in &mut *value {
                     *v = v.saturating_sub(1);
@@ -146,7 +159,9 @@ pub async fn configure(mut subs: broadcast::Receiver<Bytes>, transmitter: broadc
                         writer_opt = None;
                     }
                 }*/
-            }
+            //}
+
+            // Handle writes from central
             read_res = async {
                 match &mut reader_opt {
                     Some(reader) => reader.read(&mut read_buf).await,

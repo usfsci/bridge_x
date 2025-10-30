@@ -59,6 +59,20 @@ impl Request {
             body,
         }
     }
+
+    pub fn encode(&self) -> String {
+        let sl = format!("{}/{} {} {} {}\n", self.protocol, self.version, self.id, self.action, self.kind);
+
+        // Don't move out of self.body; borrow and format the JSON payload if present.
+        let body = match &self.body {
+            Some(v) => v.to_string(),
+            None => "".to_string(),
+        };
+
+        let s = format!("{}{}", sl, body);
+
+        s
+    }
 }
 
 impl fmt::Display for Request {

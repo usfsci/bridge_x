@@ -1,3 +1,4 @@
+
 /// Service UUID for GATT example.
 pub const SERVICE_UUID: uuid::Uuid = uuid::Uuid::from_u128(0xFEEDC0DE);
 
