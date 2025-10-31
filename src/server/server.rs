@@ -9,7 +9,7 @@ use tokio_util::codec::{Framed};
 use tokio::sync::{
     broadcast
 };
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut, BufMut};
 use std::fs;
 use crate::server::mcodec::{TwoByteLenSkipReserved, MAX_FRAME_SIZE};
 //use crate::server::peer::{Peer, PeerPair};
@@ -53,14 +53,24 @@ async fn handle_connection(stream: UnixStream, mut subs: broadcast::Receiver<Byt
         while let Some(frame_res) = source.next().await {
             match frame_res {
                 Ok(bytes_payload) => {
+                    // Rebuild the frame and forward to BLE
+                    let mut forward_frame = BytesMut::new();
+                    forward_frame.put_slice(&[0xff, 0xff]);
+                    let len_field = bytes_payload.len() as u16;
+                    forward_frame.put_slice(&len_field.to_be_bytes());
+                    forward_frame.put(bytes_payload.clone());
+                    if let Err(e) = transmitter.send(forward_frame.freeze()) {
+                        println!("transmitter err: {}", e);
+                    }
+
                     let _r = match decode_message(bytes_payload) {
                         Ok(m) => {
                             match m {
                                 Message::Request(req) => {
                                     println!("req=\n{}", req);
-                                    if let Err(e) = transmitter.send(Bytes::from(req.encode())) {
+                                    /*if let Err(e) = transmitter.send(Bytes::from(req.encode())) {
                                         println!("transmitter err: {}", e);
-                                    }
+                                    }*/
 
                                     let response = Response::new(
                                         req.protocol,
